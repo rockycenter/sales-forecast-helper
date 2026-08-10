@@ -1,12 +1,14 @@
 @echo off
 chcp 65001 >nul
+setlocal enabledelayedexpansion
+
 echo.
 echo ========================================
 echo      销售预测助手 v2.0
 echo ========================================
 echo.
 
-:: Check if Python is installed
+:: Check Python
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ❌ 错误：未检测到 Python！
@@ -20,18 +22,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo ✅ Python 已安装
+echo ✅ Python: 
 python --version
 echo.
 
-:: Check dependencies
-echo 检查依赖库...
+:: Check deps
 python -c "import pandas, numpy, openpyxl" >nul 2>&1
 if errorlevel 1 (
     echo ⚠️  缺少依赖库，正在安装...
     pip install -r requirements.txt
     if errorlevel 1 (
-        echo ❌ 依赖安装失败，请手动运行：pip install -r requirements.txt
+        echo ❌ 依赖安装失败
         pause
         exit /b 1
     )
@@ -42,26 +43,34 @@ if errorlevel 1 (
 
 echo.
 
-:: Run program with interactive input
+:: Support drag-and-drop: %1 is the dropped file
+set "FILE_PATH=%~1"
+
+if not "%FILE_PATH%"=="" (
+    echo 📂 检测到拖入文件: %FILE_PATH%
+    echo.
+    python forecast.py -i "%FILE_PATH%"
+    goto :end
+)
+
+:: No drag-and-drop, prompt for file
 echo 📂 请拖入 Excel 文件或输入路径:
 set /p FILE_PATH=""
 
 if "%FILE_PATH%"=="" (
-    echo ❌ 未提供文件路径，退出.
+    echo ❌ 未提供文件路径，退出。
     pause
     exit /b 1
 )
 
 :: Remove quotes
-set FILE_PATH=%FILE_PATH:"=%
-set FILE_PATH=%FILE_PATH:'=%
+set "FILE_PATH=%FILE_PATH:"=%"
+set "FILE_PATH=%FILE_PATH:'=%"
 
 echo.
-echo 正在启动...
-echo.
-
 python forecast.py -i "%FILE_PATH%"
 
+:end
 echo.
 echo ========================================
 echo 程序运行完毕！
