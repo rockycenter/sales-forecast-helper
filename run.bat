@@ -2,7 +2,7 @@
 chcp 65001 >nul
 echo.
 echo ========================================
-echo      销售预测助手
+echo      销售预测助手 v2.0
 echo ========================================
 echo.
 
@@ -42,18 +42,25 @@ if errorlevel 1 (
 
 echo.
 
-:: Run the program with interactive input
-echo 请按提示输入信息...
+:: Run program with interactive input
+echo 📂 请拖入 Excel 文件或输入路径:
+set /p FILE_PATH=""
+
+if "%FILE_PATH%"=="" (
+    echo ❌ 未提供文件路径，退出.
+    pause
+    exit /b 1
+)
+
+:: Remove quotes
+set FILE_PATH=%FILE_PATH:"=%
+set FILE_PATH=%FILE_PATH:'=%
+
+echo.
+echo 正在启动...
 echo.
 
-set /p FILE_PATH="Excel文件路径: "
-set /p SALESPERSON="销售员英文名: "
-
-echo.
-echo 正在运行预测...
-echo.
-
-python forecast.py -i "%FILE_PATH%" -s "%SALESPERSON%"
+python forecast.py -i "%FILE_PATH%"
 
 echo.
 echo ========================================
