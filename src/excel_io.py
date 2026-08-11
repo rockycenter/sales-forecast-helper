@@ -278,19 +278,7 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, date_m
         # 季度同比计算
         first_month_num = int(forecast_months[0].replace('月', ''))
         q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num, date_map)
-        if idx == user_data.index[0]:
-            import os, json
-            log = {
-                'first_month': first_month_num,
-                'history_len': len(history),
-                'history_sample': [float(x) if pd.notna(x) else None for x in history[:6]],
-                'forecasts': forecasts,
-                'date_map': {str(k): v for k, v in (date_map or {}).items()},
-                'q_this': int(q_this), 'q_last': int(q_last),
-                'q_pct': q_pct, 'q_valid': q_valid, 'q_total': q_total,
-            }
-            with open('forecast_debug.log', 'w') as f:
-                json.dump(log, f, indent=2, ensure_ascii=False)
+
         
         result_row = {
             '行号': idx + 1,
