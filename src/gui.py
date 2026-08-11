@@ -6,7 +6,7 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
 
-from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months
+from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, get_quarter_months
 from .config import OUTPUT_COLUMNS
 from . import __version__
 
@@ -173,8 +173,11 @@ class ForecastApp:
 
         # 动态重建列
         months = self.forecast_months or ["8月", "9月", "10月", "11月"]
-        columns = ("#", "SPEC料号", "Legacy Item", "类型", "Open SO") + tuple(months)
-        col_widths = [40, 120, 120, 50, 80] + [90] * len(months)
+        q_months = get_quarter_months(int(months[0].replace('月', '')))
+        q_label = f"Q{q_months[0]}-{q_months[2]}月"
+        
+        columns = ("#", "SPEC料号", "Legacy Item", "类型", "Open SO") + tuple(months) + ("本季合计", "去年同季", "同比%")
+        col_widths = [40, 100, 100, 50, 80] + [80] * len(months) + [90, 90, 70]
 
         self.tree['columns'] = columns
         for col, w in zip(columns, col_widths):
@@ -191,6 +194,11 @@ class ForecastApp:
             ]
             for m in months:
                 vals.append(f"{row[f'推荐_{m}']:,}")
+            # 季度列
+            vals.append(f"{int(row['本季合计']):,}")
+            vals.append(f"{int(row['去年同季']):,}")
+            pct = row['同比%']
+            vals.append(f"{pct}%" if pct != '' else 'N/A')
             tag = row['产品类型']
             self.tree.insert("", "end", values=vals, tags=(tag,))
 
@@ -200,11 +208,17 @@ class ForecastApp:
 
     def _update_summary(self, warnings):
         counts = self.result_df['产品类型'].value_counts()
-        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
-        total = sum(self.result_df[f'推荐_{m}'].sum() for m in months)
+        q_total = int(self.result_df['本季合计'].sum())
+        q_last = int(self.result_df['去年同季'].sum())
+        if q_last > 0:
+            q_pct = round((q_total - q_last) / q_last * 100, 1)
+            q_str = f"季度同比: {'↑' if q_pct >= 0 else '↓'}{abs(q_pct)}%"
+        else:
+            q_str = "季度同比: N/A"
         summary = (f"A类: {counts.get('A', 0)}  |  "
                    f"B类: {counts.get('B', 0)}  |  "
-                   f"C类: {counts.get('C', 0)}")
+                   f"C类: {counts.get('C', 0)}  |  "
+                   f"{q_str}")
         self.summary_var.set(summary)
 
         if warnings:
@@ -220,11 +234,11 @@ class ForecastApp:
         col = self.tree.identify_column(event.x)
         col_idx = int(col.replace("#", "")) - 1
 
-        # 只允许编辑月份列 (列索引 5+)
-        if col_idx < 5:
+        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
+        # 只允许编辑月份列 (列索引 5 到 5+len(months)-1)
+        if col_idx < 5 or col_idx >= 5 + len(months):
             return
 
-        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
         month = months[col_idx - 5]  # skip #, SPEC, Legacy, 类型, Open SO
         values = self.tree.item(item, 'values')
         old_val = values[col_idx]

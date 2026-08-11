@@ -40,6 +40,62 @@ def parse_forecast_months(sheet_name):
     return [f"{(current + i - 1) % 12 + 1}月" for i in range(4)]
 
 
+def get_quarter_months(month):
+    """返回指定月份所在季度的三个月，如 8 → [7,8,9]"""
+    q_start = ((month - 1) // 3) * 3 + 1
+    return [q_start, q_start + 1, q_start + 2]
+
+
+def compute_quarter_comparison(history, forecasts, first_month):
+    """
+    计算季度同比
+    history: 12个月实际数据（列表）
+    forecasts: 4个月预测值 [f1, f2, f3, f4]
+    first_month: 第一个预测月的月份 (1-12)
+    
+    返回: (本季合计, 去年同季合计, 同比%)
+    """
+    import pandas as pd
+    q_months = get_quarter_months(first_month)
+    
+    this_q = 0
+    last_q = 0
+    last_missing = 0  # 去年缺失的月数
+    
+    for qm in q_months:
+        # 今年该月
+        if qm >= first_month:
+            this_val = forecasts[qm - first_month]
+        else:
+            offset = qm - first_month  # 负值
+            hist_idx = 12 + offset
+            raw = history[hist_idx] if 0 <= hist_idx < 12 else 0
+            this_val = raw if pd.notna(raw) and raw > 0 else 0
+        
+        # 去年同月
+        offset = qm - first_month
+        if 0 <= offset < 12:
+            raw = history[offset]
+            if pd.notna(raw) and raw > 0:
+                last_val = raw
+            else:
+                last_val = 0
+                last_missing += 1
+        else:
+            last_val = 0
+            last_missing += 1
+        
+        this_q += this_val
+        last_q += last_val
+    
+    if last_q > 0:
+        pct = round((this_q - last_q) / last_q * 100, 1)
+    else:
+        pct = None
+    
+    return this_q, last_q, pct
+
+
 def load_workbook(file_path):
     """加载 Excel 并找到目标 sheet"""
     if not os.path.exists(file_path):
@@ -120,6 +176,10 @@ def run_forecast(df, salesperson, forecast_months=None):
             )
             forecasts[0] = smart_round(open_so)
 
+        # 季度同比计算
+        first_month_num = int(forecast_months[0].replace('月', ''))
+        q_this, q_last, q_pct = compute_quarter_comparison(history, forecasts, first_month_num)
+        
         result_row = {
             '行号': idx + 1,
             '区域': row[COL_REGION],
@@ -132,6 +192,9 @@ def run_forecast(df, salesperson, forecast_months=None):
             'Open_SO': int(open_so) if pd.notna(open_so) else 0,
             '历史平均': round(np.mean([x for x in history if pd.notna(x) and x > 0]))
             if [x for x in history if pd.notna(x) and x > 0] else 0,
+            '本季合计': int(q_this),
+            '去年同季': int(q_last),
+            '同比%': q_pct if q_pct is not None else '',
         }
         for i, m in enumerate(forecast_months):
             result_row[f'推荐_{m}'] = forecasts[i]
