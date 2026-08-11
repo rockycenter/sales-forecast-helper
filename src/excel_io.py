@@ -15,6 +15,31 @@ from .predictors import (
 )
 
 
+
+def parse_forecast_months(sheet_name):
+    """从Sheet名解析预测月份，如 '销售预测收集26年8-11月' → ['8月','9月','10月','11月']"""
+    import re
+    # 匹配 "8-11月" 或 "9-12" 这类起止月份
+    patterns = [
+        r'(\d{1,2})-(\d{1,2})\s*月',   # "8-11月"
+        r'(\d{1,2})-(\d{1,2})',         # "8-11"
+    ]
+    for pat in patterns:
+        match = re.search(pat, sheet_name)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            if start <= end:
+                months = list(range(start, end + 1))
+            else:
+                months = list(range(start, 13)) + list(range(1, end + 1))
+            return [f"{m}月" for m in months]
+    # Fallback: default 4 months from current
+    from datetime import datetime
+    current = datetime.now().month
+    return [f"{(current + i - 1) % 12 + 1}月" for i in range(4)]
+
+
 def load_workbook(file_path):
     """加载 Excel 并找到目标 sheet"""
     if not os.path.exists(file_path):
@@ -45,8 +70,10 @@ def get_salespeople(df):
     return sorted(names)
 
 
-def run_forecast(df, salesperson):
+def run_forecast(df, salesperson, forecast_months=None):
     """对指定销售员运行完整预测"""
+    if forecast_months is None:
+        forecast_months = ["8月", "9月", "10月", "11月"]
     user_data = df[df[COL_SALESPERSON] == salesperson].copy()
 
     if len(user_data) == 0:
@@ -93,7 +120,7 @@ def run_forecast(df, salesperson):
             )
             forecasts[0] = smart_round(open_so)
 
-        results.append({
+        result_row = {
             '行号': idx + 1,
             '区域': row[COL_REGION],
             'SPEC料号': spec,
@@ -105,11 +132,10 @@ def run_forecast(df, salesperson):
             'Open_SO': int(open_so) if pd.notna(open_so) else 0,
             '历史平均': round(np.mean([x for x in history if pd.notna(x) and x > 0]))
             if [x for x in history if pd.notna(x) and x > 0] else 0,
-            '推荐_8月': forecasts[0],
-            '推荐_9月': forecasts[1],
-            '推荐_10月': forecasts[2],
-            '推荐_11月': forecasts[3],
-        })
+        }
+        for i, m in enumerate(forecast_months):
+            result_row[f'推荐_{m}'] = forecasts[i]
+        results.append(result_row)
 
     result_df = pd.DataFrame(results)
     return result_df, warnings

@@ -1,9 +1,11 @@
 #!/bin/bash
 # 销售预测助手 - macOS/Linux GUI 启动脚本
 
+VERSION=$(cat VERSION 2>/dev/null || echo "?.?.?")
+
 echo ""
 echo "========================================"
-echo "      销售预测助手 v3.0"
+echo "      销售预测助手 v${VERSION}"
 echo "========================================"
 echo ""
 echo "🖥️  正在启动图形界面..."
@@ -31,4 +33,3 @@ else
 fi
 
 echo ""
-

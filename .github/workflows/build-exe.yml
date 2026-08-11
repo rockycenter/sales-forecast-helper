@@ -14,6 +14,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "VERSION=$(cat VERSION)" >> $GITHUB_OUTPUT
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -31,23 +36,23 @@ jobs:
           tar -xf upx.zip
           move upx-4.2.4-win64\upx.exe .
 
-      - name: Build EXE (GUI mode, UPX compressed)
+      - name: Build EXE
         run: |
-          pyinstaller --onefile --noconsole --name "销售预测助手" --clean --noconfirm --upx-dir=. forecast.py
+          pyinstaller --onefile --noconsole --name "销售预测助手_v${{ steps.version.outputs.VERSION }}" --clean --noconfirm --upx-dir=. forecast.py
 
       - name: Show size
         run: |
-          echo "EXE size:"
-          dir dist\销售预测助手.exe
+          echo "EXE: 销售预测助手_v${{ steps.version.outputs.VERSION }}.exe"
+          dir dist\
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 销售预测助手
-          path: dist/销售预测助手.exe
+          name: 销售预测助手_v${{ steps.version.outputs.VERSION }}
+          path: dist/销售预测助手_v${{ steps.version.outputs.VERSION }}.exe
 
       - name: Create Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/销售预测助手.exe
+          files: dist/销售预测助手_v${{ steps.version.outputs.VERSION }}.exe

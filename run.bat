@@ -1,9 +1,12 @@
 @echo off
 chcp 65001 >nul
 
+:: Read version
+set /p VERSION=<VERSION
+
 echo.
 echo ========================================
-echo      销售预测助手 v3.0
+echo      销售预测助手 v%VERSION%
 echo ========================================
 echo.
 echo 🖥️  正在启动图形界面...

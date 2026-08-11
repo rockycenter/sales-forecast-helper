@@ -1,14 +1,20 @@
-"""销售预测助手 v3.0 - 入口"""
+"""销售预测助手 - 入口"""
 
 import argparse
 import os
 import sys
+from src import __version__
 
 
 def main():
-    parser = argparse.ArgumentParser(description="销售预测助手 v3.0")
+    parser = argparse.ArgumentParser(
+        description=f"销售预测助手 v{__version__}",
+        epilog=f"版本: {__version__}"
+    )
     parser.add_argument("--input", "-i", help="输入 Excel 文件路径（可选）")
-    parser.add_argument("--cli", action="store_true", help="使用命令行模式（默认为图形界面）")
+    parser.add_argument("--cli", action="store_true", help="命令行模式（默认图形界面）")
+    parser.add_argument("--version", "-v", action="version",
+                        version=f"销售预测助手 v{__version__}")
     args = parser.parse_args()
 
     if args.cli:

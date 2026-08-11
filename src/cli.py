@@ -2,14 +2,14 @@
 
 import os
 import numpy as np
-from .excel_io import load_workbook, get_salespeople, run_forecast, save_result
-from .config import FORECAST_MONTHS
+from . import __version__
+from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months
 
 
 def print_banner():
     print()
     print("=" * 60)
-    print("         📊 销售预测助手 v2.0")
+    print("         📊 f'销售预测助手 v{__version__}'")
     print("=" * 60)
     print()
 
@@ -20,8 +20,10 @@ def print_table(result_df, start=0, show=10):
     subset = result_df.iloc[start:start + show]
 
     # 表头
+    months = [c for c in result_df.columns if c.startswith('推荐_')]
+    month_labels = [m.replace('推荐_', '') for m in months]
     header = (f"{'#':>4}  {'SPEC料号':<20} {'类型':<4} {'Open SO':>10}  "
-              f"{'8月':>10}  {'9月':>10}  {'10月':>10}  {'11月':>10}")
+              + "  ".join(f"{ml:>10}" for ml in month_labels))
     print(header)
     print("-" * len(header))
 
@@ -30,8 +32,7 @@ def print_table(result_df, start=0, show=10):
         print(
             f"{idx:>4}  {str(row['SPEC料号']):<20} "
             f"{row['产品类型']:<4} {row['Open_SO']:>10,}  "
-            f"{row['推荐_8月']:>10,}  {row['推荐_9月']:>10,}  "
-            f"{row['推荐_10月']:>10,}  {row['推荐_11月']:>10,}"
+            + "  ".join(f"{row[m]:>10,}" for m in months)
         )
 
     if total > show:
@@ -41,9 +42,8 @@ def print_table(result_df, start=0, show=10):
 def print_summary(result_df, warnings):
     """打印汇总统计"""
     type_counts = result_df['产品类型'].value_counts()
-    total_forecast = sum(
-        result_df[f'推荐_{m}'].sum() for m in FORECAST_MONTHS
-    )
+    forecast_cols = [c for c in result_df.columns if c.startswith('推荐_')]
+    total_forecast = sum(result_df[c].sum() for c in forecast_cols)
 
     print()
     print("📈 预测结果统计:")
@@ -63,7 +63,7 @@ def adjust_forecast(result_df):
     print()
     print("=" * 60)
     print("🔧 微调模式")
-    print("   输入格式: <行号> <月份(8/9/10/11)> <新值>")
+    print("   输入格式: <行号> <月份> <新值>")
     print("   示例: 3 8 50000  (将第3行8月推荐改为50000)")
     print("   输入 q 或 0 退出微调")
     print("=" * 60)
@@ -87,16 +87,17 @@ def adjust_forecast(result_df):
 
         try:
             row_idx = int(parts[0]) - 1  # 转为 0-based
-            month = parts[1]
+            month_num = parts[1]
             new_val = float(parts[2])
 
             if row_idx < 0 or row_idx >= len(result_df):
                 print(f"   ⚠️  行号超出范围 (1-{len(result_df)})")
                 continue
 
-            col_name = f"推荐_{month}月"
+            col_name = f"推荐_{month_num}月"
             if col_name not in result_df.columns:
-                print(f"   ⚠️  月份无效，请输入 8/9/10/11")
+                available = [c.replace('推荐_', '').replace('月', '') for c in result_df.columns if c.startswith('推荐_')]
+                print(f"   ⚠️  月份无效，可用: {', '.join(available)}")
                 continue
 
             old_val = result_df.at[row_idx, col_name]
@@ -120,6 +121,7 @@ def run_interactive(file_path):
     print(f"📂 读取文件: {os.path.basename(file_path)}")
     try:
         df, sheet_name, _ = load_workbook(file_path)
+        forecast_months = parse_forecast_months(sheet_name)
     except (FileNotFoundError, ValueError) as e:
         print(f"\n❌ {e}")
         return 1
@@ -156,7 +158,7 @@ def run_interactive(file_path):
     # 3. 运行预测
     print(f"\n⏳ 正在为 {salesperson} 生成预测...")
     try:
-        result_df, warnings = run_forecast(df, salesperson)
+        result_df, warnings = run_forecast(df, salesperson, forecast_months)
     except ValueError as e:
         print(f"\n❌ {e}")
         return 1
