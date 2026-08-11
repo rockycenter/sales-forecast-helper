@@ -25,7 +25,6 @@ class ForecastApp:
         self.sheet_name = None
         self.forecast_months = None
         self.history_count = 12
-        self.date_map = None
 
         self._build_ui()
 
@@ -129,7 +128,7 @@ class ForecastApp:
 
     def _load_file(self, path):
         try:
-            self.df, self.sheet_name, _, self.history_count, self.date_map = load_workbook(path)
+            self.df, self.sheet_name, _, self.history_count = load_workbook(path)
             self.forecast_months = parse_forecast_months(self.sheet_name)
             self.file_path = path
             self.file_var.set(path)
@@ -157,7 +156,7 @@ class ForecastApp:
         self.root.update()
 
         try:
-            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count, self.date_map)
+            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count)
             self.salesperson = person
         except Exception as e:
             messagebox.showerror("预测失败", str(e))
@@ -207,9 +206,9 @@ class ForecastApp:
             tag = row['产品类型']
             self.tree.insert("", "end", values=vals, tags=(tag,))
 
-        self.tree.tag_configure('A', background='#E8F5E9')
+        self.tree.tag_configure('A', background='#FFEBEE')
         self.tree.tag_configure('B', background='#FFF8E1')
-        self.tree.tag_configure('C', background='#F5F5F5')
+        self.tree.tag_configure('C', background='#FFFFFF')
 
     def _update_summary(self, warnings):
         counts = self.result_df['产品类型'].value_counts()
@@ -301,7 +300,7 @@ class ForecastApp:
         first_month_num = int(months[0].replace('月', ''))
 
         q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
-            history, forecasts, first_month_num, self.date_map
+            history, forecasts, first_month_num
         )
 
         # 更新 DataFrame

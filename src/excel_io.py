@@ -46,14 +46,12 @@ def get_quarter_months(month):
     return [q_start, q_start + 1, q_start + 2]
 
 
-def compute_quarter_comparison(history, forecasts, first_month, date_map=None):
+def compute_quarter_comparison(history, forecasts, first_month):
     """
-    计算季度同比（仅比较有完整两年数据的月份）
-    history: N个月实际数据（列表），覆盖 [first_month-N, first_month-1] 月
+    计算季度同比（位置推算）
+    history: N个月实际数据，覆盖 [first_month-N, first_month-1] 月
     forecasts: 4个月预测值 [f1, f2, f3, f4]
     first_month: 第一个预测月的月份 (1-12)
-    date_map: 保留参数，暂不使用
-
     返回: (本季合计, 去年同季合计, 同比%, 有效月数, 季度总月数)
     """
     import pandas as pd
@@ -99,95 +97,21 @@ def compute_quarter_comparison(history, forecasts, first_month, date_map=None):
 
 
 
-def _detect_history_meta(df):
-    """从表头自动检测历史数据列数及年月映射。
-    返回: (history_count, date_map)
-    date_map 为 {列索引: (年, 月)}，如 {5: (2025, 7)}"""
-    import re
+def _detect_history_count(df):
+    """扫描数据行，从 COL_HISTORY_START 开始数连续数值列"""
     from .config import COL_HISTORY_START
-    
-    # 优先匹配 "25年7月" 格式
-    full_pat = re.compile(r'(\d{2,4})\s*年\s*(\d{1,2})\s*月')
-    short_pat = re.compile(r'(\d{1,2})\s*月')
-    
-    for header_row_idx in range(min(4, len(df))):
-        row = df.iloc[header_row_idx]
-        date_map = {}
+    for row_idx in range(3, min(len(df), 20)):
+        row = df.iloc[row_idx]
         count = 0
         for c in range(COL_HISTORY_START, len(df.columns)):
             val = row[c]
-            if pd.isna(val):
-                break
-            text = str(val).strip()
-            
-            m = full_pat.search(text)
-            if m:
-                y = int(m.group(1))
-                if y < 100:
-                    y += 2000
-                mo = int(m.group(2))
-                if 1 <= mo <= 12:
-                    date_map[c] = (y, mo)
-                    count += 1
-                    continue
-            
-            m = short_pat.search(text)
-            if m:
-                mo = int(m.group(1))
-                if 1 <= mo <= 12:
-                    date_map[c] = (None, mo)  # 年份未知
-                    count += 1
-                    continue
-            break
-        if count >= 6:
-            # 补全年份：按月份序列推断
-            date_map = _infer_years(date_map)
-            return count, date_map
-    
-    # 兜底：扫数值
-    if len(df) < 4:
-        return 12, {}
-    row = df.iloc[3]
-    count = 0
-    for c in range(COL_HISTORY_START, len(df.columns)):
-        val = row[c]
-        if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)) and val >= 0:
-            count += 1
-        else:
-            break
-    return max(count, 6), {}
-
-
-def _infer_years(date_map):
-    """补全 date_map 中缺失的年份（通过月份递增/递减推断）"""
-    items = sorted(date_map.items())
-    if not items:
-        return date_map
-    # 找第一个有年份的
-    base_year = None
-    base_col, base_month = None, None
-    for col, (y, m) in items:
-        if y is not None:
-            base_year = y
-            base_col = col
-            base_month = m
-            break
-    if base_year is None:
-        return date_map  # 全都没有年份
-    
-    result = {}
-    for col, (y, m) in sorted(date_map.items()):
-        if y is not None:
-            result[col] = (y, m)
-        else:
-            # 根据月份变化推断年份
-            if m >= base_month:
-                result[col] = (base_year, m)
+            if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)) and val >= 0:
+                count += 1
             else:
-                result[col] = (base_year + 1, m)
-        base_month = m
-    return result
-
+                break
+        if count >= 6:
+            return count
+    return 12
 
 
 
@@ -225,7 +149,7 @@ def get_salespeople(df):
     return sorted(names)
 
 
-def run_forecast(df, salesperson, forecast_months=None, history_count=12, date_map=None):
+def run_forecast(df, salesperson, forecast_months=None, history_count=12):
     """对指定销售员运行完整预测"""
     if forecast_months is None:
         forecast_months = ["8月", "9月", "10月", "11月"]
@@ -277,7 +201,7 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, date_m
 
         # 季度同比计算
         first_month_num = int(forecast_months[0].replace('月', ''))
-        q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num, date_map)
+        q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num)
 
         
         result_row = {
