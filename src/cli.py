@@ -120,7 +120,7 @@ def run_interactive(file_path):
     # 1. 加载文件
     print(f"📂 读取文件: {os.path.basename(file_path)}")
     try:
-        df, sheet_name, _ = load_workbook(file_path)
+        df, sheet_name, _, history_count = load_workbook(file_path)
         forecast_months = parse_forecast_months(sheet_name)
     except (FileNotFoundError, ValueError) as e:
         print(f"\n❌ {e}")
@@ -158,7 +158,7 @@ def run_interactive(file_path):
     # 3. 运行预测
     print(f"\n⏳ 正在为 {salesperson} 生成预测...")
     try:
-        result_df, warnings = run_forecast(df, salesperson, forecast_months)
+        result_df, warnings = run_forecast(df, salesperson, forecast_months, history_count)
     except ValueError as e:
         print(f"\n❌ {e}")
         return 1

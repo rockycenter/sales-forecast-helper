@@ -2,8 +2,8 @@
 
 # ---- Excel 列映射 (0-based) ----
 COL_SALESPERSON = 3        # 销售员
-COL_HISTORY_START = 5      # 12个月历史起始列
-COL_HISTORY_END = 17       # 12个月历史结束列（不含）
+COL_HISTORY_START = 5      # 历史数据起始列（月数自动检测）
+# COL_HISTORY_END 已废弃，改为自动检测
 COL_OPEN_SO = 21           # Open SO列
 COL_REGION = 0             # 区域
 COL_SPEC = 1               # SPEC料号

@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from .config import (
-    COL_SALESPERSON, COL_HISTORY_START, COL_HISTORY_END,
+    COL_SALESPERSON, COL_HISTORY_START,
     COL_OPEN_SO, COL_REGION, COL_SPEC, COL_LEGACY, COL_UNIT,
     SHEET_KEYWORD, OUTPUT_COLUMNS, FORECAST_MONTHS,
 )
@@ -49,46 +49,54 @@ def get_quarter_months(month):
 def compute_quarter_comparison(history, forecasts, first_month):
     """
     计算季度同比（仅比较有完整两年数据的月份）
-    history: 12个月实际数据（列表），覆盖 [first_month-12, first_month-1] 月
+    history: N个月实际数据（列表），覆盖 [first_month-N, first_month-1] 月
     forecasts: 4个月预测值 [f1, f2, f3, f4]
     first_month: 第一个预测月的月份 (1-12)
-    
+
     返回: (本季合计, 去年同季合计, 同比%, 有效月数, 季度总月数)
     """
     import pandas as pd
     q_months = get_quarter_months(first_month)
-    
+    N = len(history)
+
     this_q = 0
     last_q = 0
     valid_months = 0
-    
+
     for qm in q_months:
-        # 去年同月索引 = qm - first_month
-        # 如果 first_month=8, qm=7 → offset=-1 → hist_idx=-1 (不存在!)
-        # 如果 first_month=8, qm=8 → offset=0  → hist_idx=0  (去年8月)
-        offset = qm - first_month
-        
-        # 只有去年数据在 history 内 (0 <= offset < 12) 时才纳入对比
-        if offset < 0 or offset >= 12:
+        # 去年同月在 history 中的索引
+        # history[0] = first_month - N 月
+        # qm 的去年 = qm - 12
+        last_idx = (qm - 12) - (first_month - N)
+
+        if last_idx < 0 or last_idx >= N:
             continue
-        if not (pd.notna(history[offset]) and history[offset] > 0):
+        if not (pd.notna(history[last_idx]) and history[last_idx] > 0):
             continue
-        
+
         valid_months += 1
-        
+
         # 今年该月
         if qm >= first_month:
             this_val = forecasts[qm - first_month]
         else:
-            hist_idx = 12 + offset
-            raw = history[hist_idx] if 0 <= hist_idx < 12 else 0
+            this_idx = qm - (first_month - N)
+            raw = history[this_idx] if 0 <= this_idx < N else 0
             this_val = raw if pd.notna(raw) and raw > 0 else 0
-        
-        last_val = history[offset]
-        
+
+        last_val = history[last_idx]
+
         this_q += this_val
         last_q += last_val
-    
+
+    if last_q > 0:
+        pct = round((this_q - last_q) / last_q * 100, 1)
+    else:
+        pct = None
+
+    return this_q, last_q, pct, valid_months, len(q_months)
+
+
     if last_q > 0:
         pct = round((this_q - last_q) / last_q * 100, 1)
     else:
@@ -97,8 +105,25 @@ def compute_quarter_comparison(history, forecasts, first_month):
     return this_q, last_q, pct, valid_months, len(q_months)
 
 
+def _detect_history_count(df):
+    """自动检测 Excel 中历史数据的月数。
+    从 COL_HISTORY_START 列开始，扫描第一行数据中有多少连续数值列。"""
+    from .config import COL_HISTORY_START
+    if len(df) < 4:
+        return 12  # fallback
+    row = df.iloc[3]  # 第4行通常是第一条数据
+    count = 0
+    for c in range(COL_HISTORY_START, len(df.columns)):
+        val = row[c]
+        if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)) and val >= 0:
+            count += 1
+        else:
+            break
+    return max(count, 6)  # 最少6个月
+
+
 def load_workbook(file_path):
-    """加载 Excel 并找到目标 sheet"""
+    """加载 Excel 并找到目标 sheet，自动检测历史数据月数"""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"找不到文件: {file_path}")
 
@@ -118,7 +143,11 @@ def load_workbook(file_path):
         )
 
     df = pd.read_excel(file_path, sheet_name=target_sheet, header=None)
-    return df, target_sheet, sheet_names
+
+    # 自动检测历史数据列数（从 COL_HISTORY_START 开始，数连续有数值的列）
+    history_count = _detect_history_count(df)
+    
+    return df, target_sheet, sheet_names, history_count
 
 
 def get_salespeople(df):
@@ -127,7 +156,7 @@ def get_salespeople(df):
     return sorted(names)
 
 
-def run_forecast(df, salesperson, forecast_months=None):
+def run_forecast(df, salesperson, forecast_months=None, history_count=12):
     """对指定销售员运行完整预测"""
     if forecast_months is None:
         forecast_months = ["8月", "9月", "10月", "11月"]
@@ -146,7 +175,7 @@ def run_forecast(df, salesperson, forecast_months=None):
     for idx, row in user_data.iterrows():
         spec = row[COL_SPEC]
         legacy = row[COL_LEGACY]
-        history = [row[c] for c in range(COL_HISTORY_START, COL_HISTORY_END)]
+        history = [row[c] for c in range(COL_HISTORY_START, COL_HISTORY_START + history_count)]
         open_so = row[COL_OPEN_SO] if pd.notna(row[COL_OPEN_SO]) else 0
 
         ptype, reason = classify_product(history)

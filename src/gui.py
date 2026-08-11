@@ -24,6 +24,7 @@ class ForecastApp:
         self.salesperson = None
         self.sheet_name = None
         self.forecast_months = None
+        self.history_count = 12
 
         self._build_ui()
 
@@ -127,7 +128,7 @@ class ForecastApp:
 
     def _load_file(self, path):
         try:
-            self.df, self.sheet_name, _ = load_workbook(path)
+            self.df, self.sheet_name, _, self.history_count = load_workbook(path)
             self.forecast_months = parse_forecast_months(self.sheet_name)
             self.file_path = path
             self.file_var.set(path)
@@ -155,7 +156,7 @@ class ForecastApp:
         self.root.update()
 
         try:
-            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months)
+            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count)
             self.salesperson = person
         except Exception as e:
             messagebox.showerror("预测失败", str(e))
