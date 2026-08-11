@@ -6,7 +6,7 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
 
-from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, get_quarter_months
+from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, get_quarter_months, compute_quarter_comparison
 from .config import OUTPUT_COLUMNS
 from . import __version__
 
@@ -274,7 +274,8 @@ class ForecastApp:
                 col_name = f"推荐_{month}"
                 self.result_df.at[row_idx, col_name] = new_val
                 self.tree.set(item, columns[col_idx], f"{new_val:,}")
-                self._update_summary([])
+                # 实时重算该行季度同比
+                self._refresh_quarter_row(row_idx, item, columns)
                 top.destroy()
             except ValueError:
                 messagebox.showwarning("格式错误", "请输入整数", parent=top)
@@ -284,6 +285,36 @@ class ForecastApp:
         tk.Button(btn_frame, text="确定", command=confirm,
                   bg="#4CAF50", fg="white", padx=15).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="取消", command=top.destroy, padx=15).pack(side=tk.LEFT)
+
+    # ── 季度同比实时更新 ──
+
+    def _refresh_quarter_row(self, row_idx, item, columns):
+        """编辑某个预测值后，重算该行的季度同比并刷新显示"""
+        row = self.result_df.iloc[row_idx]
+        history = row['_历史']
+        # 从 result_df 重建当前预测值（已包含刚才的修改）
+        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
+        forecasts = [row[f'推荐_{m}'] for m in months]
+        first_month_num = int(months[0].replace('月', ''))
+
+        q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
+            history, forecasts, first_month_num
+        )
+
+        # 更新 DataFrame
+        self.result_df.at[row_idx, '本季合计'] = int(q_this)
+        self.result_df.at[row_idx, '去年同季'] = int(q_last)
+        self.result_df.at[row_idx, '同比%'] = q_pct if q_pct is not None else ''
+        self.result_df.at[row_idx, '有效对比月'] = valid
+
+        # 更新表格显示（季度列在月份列之后）
+        base = 5 + len(months)
+        self.tree.set(item, columns[base], f"{int(q_this):,}")
+        self.tree.set(item, columns[base + 1], f"{int(q_last):,}")
+        self.tree.set(item, columns[base + 2], f"{q_pct}%" if q_pct is not None else 'N/A')
+
+        # 刷新汇总
+        self._update_summary([])
 
     # ── 导出 ──
 

@@ -198,6 +198,8 @@ def run_forecast(df, salesperson, forecast_months=None):
             '同比%': q_pct if q_pct is not None else '',
             '有效对比月': q_valid,
             '季度月数': q_total,
+            '_历史': history,       # 原始12月数据，供GUI实时重算同比
+            '_预测': forecasts,     # 原始4月预测，供GUI实时重算同比
         }
         for i, m in enumerate(forecast_months):
             result_row[f'推荐_{m}'] = forecasts[i]
