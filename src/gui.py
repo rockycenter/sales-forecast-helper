@@ -16,7 +16,7 @@ class ForecastApp:
         self.root = tk.Tk()
         self.root.title(f'销售预测助手 v{__version__}')
         self.root.geometry("1000x680")
-        self.root.minsize(800, 500)
+        self.root.minsize(960, 550)
 
         self.df = None
         self.result_df = None
@@ -94,16 +94,17 @@ class ForecastApp:
         # 双击编辑
         self.tree.bind("<Double-1>", self._on_cell_edit)
 
-        # 底部状态栏
+        # 底部操作栏（固定高度）
+        f3 = tk.Frame(self.root, height=40)
+        f3.pack(fill=tk.X, side=tk.BOTTOM, padx=20, pady=(0, 5))
+        f3.pack_propagate(False)
+
+        # 底部状态栏（固定高度）
         self.status_var = tk.StringVar(value="就绪")
         status = tk.Label(self.root, textvariable=self.status_var,
                           relief=tk.SUNKEN, anchor=tk.W, padx=10,
-                          font=("Microsoft YaHei", 9))
+                          font=("Microsoft YaHei", 9), height=1)
         status.pack(fill=tk.X, side=tk.BOTTOM)
-
-        # 底部操作栏
-        f3 = tk.Frame(self.root)
-        f3.pack(fill=tk.X, padx=20, pady=(5, 10))
 
         self.summary_var = tk.StringVar(value="")
         tk.Label(f3, textvariable=self.summary_var,
@@ -203,8 +204,7 @@ class ForecastApp:
         total = sum(self.result_df[f'推荐_{m}'].sum() for m in months)
         summary = (f"A类: {counts.get('A', 0)}  |  "
                    f"B类: {counts.get('B', 0)}  |  "
-                   f"C类: {counts.get('C', 0)}  |  "
-                   f"4月总量: {total:,.0f}")
+                   f"C类: {counts.get('C', 0)}")
         self.summary_var.set(summary)
 
         if warnings:

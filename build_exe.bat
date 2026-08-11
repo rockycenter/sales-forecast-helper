@@ -28,7 +28,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] 打包中（可能需要 1-2 分钟）...
-pyinstaller --onefile --noconsole --name "销售预测助手_v%VERSION%" --clean --noconfirm forecast.py
+pyinstaller --onefile --noconsole --add-data "VERSION;." --name "销售预测助手_v%VERSION%" --clean --noconfirm forecast.py
 
 if errorlevel 1 (
     echo ❌ 打包失败

@@ -38,7 +38,7 @@ jobs:
 
       - name: Build EXE
         run: |
-          pyinstaller --onefile --noconsole --name "销售预测助手_v${{ steps.version.outputs.VERSION }}" --clean --noconfirm --upx-dir=. forecast.py
+          pyinstaller --onefile --noconsole --add-data "VERSION;." --name "销售预测助手_v${{ steps.version.outputs.VERSION }}" --clean --noconfirm --upx-dir=. forecast.py
 
       - name: Show size
         run: |
