@@ -62,19 +62,16 @@ def compute_quarter_comparison(history, forecasts, first_month, date_map=None):
     q_months = get_quarter_months(first_month)
 
     if date_map:
-        # 有年月映射：精确匹配
-        # 建立索引: (年, 月) → history 索引
-        ymd = {(y, m): c - COL_HISTORY_START for c, (y, m) in date_map.items()}
-        # 确定预测年（取 date_map 中最常见的年份作为"今年"）
-        years = [y for y, _ in date_map.values()]
-        if years:
-            from collections import Counter
-            forecast_year = Counter(years).most_common(1)[0][0]
-        else:
-            forecast_year = None
+        # 检查是否有有效年份
+        years = [y for y, _ in date_map.values() if y is not None]
+        if not years:
+            # 无有效年份 → 降级为位置推算
+            date_map = None
 
-        # 还需要确定预测年 = date_map 中最大年
-        max_year = max(years) if years else None
+    if date_map:
+        # 有年月映射：精确匹配
+        ymd = {(y, m): c - COL_HISTORY_START for c, (y, m) in date_map.items()}
+        max_year = max(years)
         
         this_q = 0
         last_q = 0
