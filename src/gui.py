@@ -164,10 +164,24 @@ class ForecastApp:
             self.status_var.set("预测失败")
             return
 
+        # 调试日志
+        import json
+        log = {
+            'history_count': self.history_count,
+            'date_map': {str(k): v for k, v in (self.date_map or {}).items()},
+            'result_cols': list(self.result_df.columns),
+            'sample_本季合计': [int(x) for x in self.result_df['本季合计'].head(3)],
+            'sample_去年同季': [int(x) for x in self.result_df['去年同季'].head(3)],
+            'sample_同比': [str(x) for x in self.result_df['同比%'].head(3)],
+        }
+        with open('forecast_debug.log', 'a') as f:
+            f.write('\n=== GUI ===\n')
+            json.dump(log, f, indent=2, ensure_ascii=False)
+            f.write('\n')
         self._populate_table()
         self._update_summary(warnings)
         self.export_btn['state'] = 'normal'
-        self.status_var.set(f"预测完成 — {person} — {len(self.result_df)} 条记录")
+        self.status_var.set(f"预测完成 — {person} — {len(self.result_df)} 条 | 调试日志: forecast_debug.log")
 
     def _populate_table(self):
         for item in self.tree.get_children():

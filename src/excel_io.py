@@ -48,84 +48,47 @@ def get_quarter_months(month):
 
 def compute_quarter_comparison(history, forecasts, first_month, date_map=None):
     """
-    计算季度同比（精确按年月匹配）
-    history: 历史数据列表（与 date_map 列索引对应）
+    计算季度同比（仅比较有完整两年数据的月份）
+    history: N个月实际数据（列表），覆盖 [first_month-N, first_month-1] 月
     forecasts: 4个月预测值 [f1, f2, f3, f4]
     first_month: 第一个预测月的月份 (1-12)
-    date_map: {列索引: (年, 月)}，从表头识别
+    date_map: 保留参数，暂不使用
 
     返回: (本季合计, 去年同季合计, 同比%, 有效月数, 季度总月数)
     """
     import pandas as pd
-    from .config import COL_HISTORY_START
-    
     q_months = get_quarter_months(first_month)
+    N = len(history)
 
-    if date_map:
-        # 检查是否有有效年份
-        years = [y for y, _ in date_map.values() if y is not None]
-        if not years:
-            # 无有效年份 → 降级为位置推算
-            date_map = None
+    this_q = 0
+    last_q = 0
+    valid_months = 0
 
-    if date_map:
-        # 有年月映射：精确匹配
-        ymd = {(y, m): c - COL_HISTORY_START for c, (y, m) in date_map.items()}
-        max_year = max(years)
-        
-        this_q = 0
-        last_q = 0
-        valid_months = 0
+    for qm in q_months:
+        # 去年同月在 history 中的索引
+        # history[0] = first_month - N 月
+        # qm 的去年 = qm - 12
+        last_idx = (qm - 12) - (first_month - N)
 
-        for qm in q_months:
-            # 去年同月
-            if max_year is not None and (max_year - 1, qm) in ymd:
-                last_idx = ymd[(max_year - 1, qm)]
-                if not (pd.notna(history[last_idx]) and history[last_idx] > 0):
-                    continue
-                last_val = history[last_idx]
-            else:
-                continue
+        if last_idx < 0 or last_idx >= N:
+            continue
+        if not (pd.notna(history[last_idx]) and history[last_idx] > 0):
+            continue
 
-            # 今年该月
-            if qm >= first_month:
-                this_val = forecasts[qm - first_month]
-            elif (max_year, qm) in ymd:
-                this_idx = ymd[(max_year, qm)]
-                raw = history[this_idx]
-                this_val = raw if pd.notna(raw) and raw > 0 else 0
-            else:
-                continue  # 今年该月无数据
+        valid_months += 1
 
-            valid_months += 1
-            this_q += this_val
-            last_q += last_val
-    else:
-        # 无年月映射：用位置推算（旧逻辑）
-        N = len(history)
-        this_q = 0
-        last_q = 0
-        valid_months = 0
+        # 今年该月
+        if qm >= first_month:
+            this_val = forecasts[qm - first_month]
+        else:
+            this_idx = qm - (first_month - N)
+            raw = history[this_idx] if 0 <= this_idx < N else 0
+            this_val = raw if pd.notna(raw) and raw > 0 else 0
 
-        for qm in q_months:
-            last_idx = (qm - 12) - (first_month - N)
-            if last_idx < 0 or last_idx >= N:
-                continue
-            if not (pd.notna(history[last_idx]) and history[last_idx] > 0):
-                continue
+        last_val = history[last_idx]
 
-            valid_months += 1
-
-            if qm >= first_month:
-                this_val = forecasts[qm - first_month]
-            else:
-                this_idx = qm - (first_month - N)
-                raw = history[this_idx] if 0 <= this_idx < N else 0
-                this_val = raw if pd.notna(raw) and raw > 0 else 0
-
-            last_val = history[last_idx]
-            this_q += this_val
-            last_q += last_val
+        this_q += this_val
+        last_q += last_val
 
     if last_q > 0:
         pct = round((this_q - last_q) / last_q * 100, 1)
@@ -133,6 +96,9 @@ def compute_quarter_comparison(history, forecasts, first_month, date_map=None):
         pct = None
 
     return this_q, last_q, pct, valid_months, len(q_months)
+
+
+
 def _detect_history_meta(df):
     """从表头自动检测历史数据列数及年月映射。
     返回: (history_count, date_map)
@@ -312,6 +278,19 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, date_m
         # 季度同比计算
         first_month_num = int(forecast_months[0].replace('月', ''))
         q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num, date_map)
+        if idx == user_data.index[0]:
+            import os, json
+            log = {
+                'first_month': first_month_num,
+                'history_len': len(history),
+                'history_sample': [float(x) if pd.notna(x) else None for x in history[:6]],
+                'forecasts': forecasts,
+                'date_map': {str(k): v for k, v in (date_map or {}).items()},
+                'q_this': int(q_this), 'q_last': int(q_last),
+                'q_pct': q_pct, 'q_valid': q_valid, 'q_total': q_total,
+            }
+            with open('forecast_debug.log', 'w') as f:
+                json.dump(log, f, indent=2, ensure_ascii=False)
         
         result_row = {
             '行号': idx + 1,
