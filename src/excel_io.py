@@ -138,9 +138,9 @@ def load_workbook(file_path):
     df = pd.read_excel(file_path, sheet_name=target_sheet, header=None)
 
     # 自动检测历史数据列数及月份映射
-    history_count, date_map = _detect_history_meta(df)
+    history_count = _detect_history_count(df)
     
-    return df, target_sheet, sheet_names, history_count, date_map
+    return df, target_sheet, sheet_names, history_count
 
 
 def get_salespeople(df):
