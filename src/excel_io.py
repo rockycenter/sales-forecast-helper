@@ -107,11 +107,42 @@ def compute_quarter_comparison(history, forecasts, first_month):
 
 def _detect_history_count(df):
     """自动检测 Excel 中历史数据的月数。
-    从 COL_HISTORY_START 列开始，扫描第一行数据中有多少连续数值列。"""
+    优先从表头文字识别（如 '25年7月'），失败则扫数值。"""
+    import re
     from .config import COL_HISTORY_START
+    
+    # 方法1：从表头行识别月份标记
+    month_patterns = [
+        re.compile(r'(\d{2,4})\s*年\s*(\d{1,2})\s*月'),  # "25年7月" / "2025年8月"
+        re.compile(r'(\d{1,2})\s*月'),                     # "7月" / "12月"
+        re.compile(r'(\d{4})[-/](\d{1,2})'),              # "2025-07" / "2025/8"
+    ]
+    
+    for header_row_idx in range(min(4, len(df))):
+        row = df.iloc[header_row_idx]
+        headers = []
+        for c in range(COL_HISTORY_START, len(df.columns)):
+            val = row[c]
+            if pd.isna(val):
+                break
+            text = str(val).strip()
+            matched = False
+            for pat in month_patterns:
+                m = pat.search(text)
+                if m:
+                    matched = True
+                    break
+            if matched:
+                headers.append(text)
+            else:
+                break
+        if len(headers) >= 6:
+            return len(headers)
+    
+    # 方法2：扫描数值列（兜底）
     if len(df) < 4:
-        return 12  # fallback
-    row = df.iloc[3]  # 第4行通常是第一条数据
+        return 12
+    row = df.iloc[3]
     count = 0
     for c in range(COL_HISTORY_START, len(df.columns)):
         val = row[c]
@@ -119,7 +150,7 @@ def _detect_history_count(df):
             count += 1
         else:
             break
-    return max(count, 6)  # 最少6个月
+    return max(count, 6)
 
 
 def load_workbook(file_path):

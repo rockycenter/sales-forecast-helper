@@ -137,7 +137,7 @@ class ForecastApp:
             self.sales_combo['values'] = names
             self.sales_combo['state'] = 'readonly'
             self.run_btn['state'] = 'normal'
-            self.status_var.set(f"已加载: {os.path.basename(path)} | Sheet: {self.sheet_name} | 共 {len(names)} 位销售员")
+            self.status_var.set(f"已加载: {os.path.basename(path)} | Sheet: {self.sheet_name} | 历史: {self.history_count}个月 | 销售员: {len(names)} 人")
         except Exception as e:
             messagebox.showerror("加载失败", str(e))
 
