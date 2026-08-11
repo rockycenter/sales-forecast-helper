@@ -31,9 +31,9 @@ jobs:
           tar -xf upx.zip
           move upx-4.2.4-win64\upx.exe .
 
-      - name: Build EXE (UPX compressed)
+      - name: Build EXE (GUI mode, UPX compressed)
         run: |
-          pyinstaller --onefile --name "销售预测助手" --console --clean --noconfirm --upx-dir=. forecast.py
+          pyinstaller --onefile --noconsole --name "销售预测助手" --clean --noconfirm --upx-dir=. forecast.py
 
       - name: Show size
         run: |

@@ -1,78 +1,36 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo      销售预测助手 v2.0
+echo      销售预测助手 v3.0
 echo ========================================
+echo.
+echo 🖥️  正在启动图形界面...
 echo.
 
 :: Check Python
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ❌ 错误：未检测到 Python！
-    echo.
-    echo 请先安装 Python：
-    echo   1. 访问 https://www.python.org/downloads/
-    echo   2. 下载并安装 Python 3.x
-    echo   3. 安装时勾选 "Add Python to PATH"
-    echo.
+    echo   请先安装 Python 3.x
+    echo   https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
-echo ✅ Python: 
-python --version
-echo.
-
 :: Check deps
-python -c "import pandas, numpy, openpyxl" >nul 2>&1
+python -c "import pandas, numpy, openpyxl, tkinter" >nul 2>&1
 if errorlevel 1 (
     echo ⚠️  缺少依赖库，正在安装...
     pip install -r requirements.txt
-    if errorlevel 1 (
-        echo ❌ 依赖安装失败
-        pause
-        exit /b 1
-    )
-    echo ✅ 依赖安装完成
+)
+
+:: Launch GUI (pass dragged file if any)
+if not "%~1"=="" (
+    pythonw forecast.py -i "%~1"
 ) else (
-    echo ✅ 依赖库已就绪
+    pythonw forecast.py
 )
 
-echo.
-
-:: Support drag-and-drop: %1 is the dropped file
-set "FILE_PATH=%~1"
-
-if not "%FILE_PATH%"=="" (
-    echo 📂 检测到拖入文件: %FILE_PATH%
-    echo.
-    python forecast.py -i "%FILE_PATH%"
-    goto :end
-)
-
-:: No drag-and-drop, prompt for file
-echo 📂 请拖入 Excel 文件或输入路径:
-set /p FILE_PATH=""
-
-if "%FILE_PATH%"=="" (
-    echo ❌ 未提供文件路径，退出。
-    pause
-    exit /b 1
-)
-
-:: Remove quotes
-set "FILE_PATH=%FILE_PATH:"=%"
-set "FILE_PATH=%FILE_PATH:'=%"
-
-echo.
-python forecast.py -i "%FILE_PATH%"
-
-:end
-echo.
-echo ========================================
-echo 程序运行完毕！
-echo ========================================
-pause
+endlocal
