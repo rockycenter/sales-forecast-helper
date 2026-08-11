@@ -25,9 +25,20 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build EXE
+      - name: Download UPX
         run: |
-          pyinstaller --onefile --name "销售预测助手" --console --clean --noconfirm forecast.py
+          curl -L -o upx.zip https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip
+          tar -xf upx.zip
+          move upx-4.2.4-win64\upx.exe .
+
+      - name: Build EXE (UPX compressed)
+        run: |
+          pyinstaller --onefile --name "销售预测助手" --console --clean --noconfirm --upx-dir=. forecast.py
+
+      - name: Show size
+        run: |
+          echo "EXE size:"
+          dir dist\销售预测助手.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
