@@ -25,6 +25,7 @@ class ForecastApp:
         self.sheet_name = None
         self.forecast_months = None
         self.history_count = 12
+        self.date_map = None
 
         self._build_ui()
 
@@ -128,7 +129,7 @@ class ForecastApp:
 
     def _load_file(self, path):
         try:
-            self.df, self.sheet_name, _, self.history_count = load_workbook(path)
+            self.df, self.sheet_name, _, self.history_count, self.date_map = load_workbook(path)
             self.forecast_months = parse_forecast_months(self.sheet_name)
             self.file_path = path
             self.file_var.set(path)
@@ -156,7 +157,7 @@ class ForecastApp:
         self.root.update()
 
         try:
-            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count)
+            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count, self.date_map)
             self.salesperson = person
         except Exception as e:
             messagebox.showerror("预测失败", str(e))
@@ -299,7 +300,7 @@ class ForecastApp:
         first_month_num = int(months[0].replace('月', ''))
 
         q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
-            history, forecasts, first_month_num
+            history, forecasts, first_month_num, self.date_map
         )
 
         # 更新 DataFrame
