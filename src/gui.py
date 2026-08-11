@@ -174,7 +174,9 @@ class ForecastApp:
         # 动态重建列
         months = self.forecast_months or ["8月", "9月", "10月", "11月"]
         q_months = get_quarter_months(int(months[0].replace('月', '')))
-        q_label = f"Q{q_months[0]}-{q_months[2]}月"
+        # 检测有效对比月数
+        sample_q_valid = self.result_df.iloc[0].get('有效对比月', 3) if len(self.result_df) > 0 else 3
+        sample_q_total = self.result_df.iloc[0].get('季度月数', 3) if len(self.result_df) > 0 else 3
         
         columns = ("#", "SPEC料号", "Legacy Item", "类型", "Open SO") + tuple(months) + ("本季合计", "去年同季", "同比%")
         col_widths = [40, 100, 100, 50, 80] + [80] * len(months) + [90, 90, 70]

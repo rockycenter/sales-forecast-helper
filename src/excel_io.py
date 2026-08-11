@@ -48,42 +48,43 @@ def get_quarter_months(month):
 
 def compute_quarter_comparison(history, forecasts, first_month):
     """
-    计算季度同比
-    history: 12个月实际数据（列表）
+    计算季度同比（仅比较有完整两年数据的月份）
+    history: 12个月实际数据（列表），覆盖 [first_month-12, first_month-1] 月
     forecasts: 4个月预测值 [f1, f2, f3, f4]
     first_month: 第一个预测月的月份 (1-12)
     
-    返回: (本季合计, 去年同季合计, 同比%)
+    返回: (本季合计, 去年同季合计, 同比%, 有效月数, 季度总月数)
     """
     import pandas as pd
     q_months = get_quarter_months(first_month)
     
     this_q = 0
     last_q = 0
-    last_missing = 0  # 去年缺失的月数
+    valid_months = 0
     
     for qm in q_months:
+        # 去年同月索引 = qm - first_month
+        # 如果 first_month=8, qm=7 → offset=-1 → hist_idx=-1 (不存在!)
+        # 如果 first_month=8, qm=8 → offset=0  → hist_idx=0  (去年8月)
+        offset = qm - first_month
+        
+        # 只有去年数据在 history 内 (0 <= offset < 12) 时才纳入对比
+        if offset < 0 or offset >= 12:
+            continue
+        if not (pd.notna(history[offset]) and history[offset] > 0):
+            continue
+        
+        valid_months += 1
+        
         # 今年该月
         if qm >= first_month:
             this_val = forecasts[qm - first_month]
         else:
-            offset = qm - first_month  # 负值
             hist_idx = 12 + offset
             raw = history[hist_idx] if 0 <= hist_idx < 12 else 0
             this_val = raw if pd.notna(raw) and raw > 0 else 0
         
-        # 去年同月
-        offset = qm - first_month
-        if 0 <= offset < 12:
-            raw = history[offset]
-            if pd.notna(raw) and raw > 0:
-                last_val = raw
-            else:
-                last_val = 0
-                last_missing += 1
-        else:
-            last_val = 0
-            last_missing += 1
+        last_val = history[offset]
         
         this_q += this_val
         last_q += last_val
@@ -93,7 +94,7 @@ def compute_quarter_comparison(history, forecasts, first_month):
     else:
         pct = None
     
-    return this_q, last_q, pct
+    return this_q, last_q, pct, valid_months, len(q_months)
 
 
 def load_workbook(file_path):
@@ -178,7 +179,7 @@ def run_forecast(df, salesperson, forecast_months=None):
 
         # 季度同比计算
         first_month_num = int(forecast_months[0].replace('月', ''))
-        q_this, q_last, q_pct = compute_quarter_comparison(history, forecasts, first_month_num)
+        q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num)
         
         result_row = {
             '行号': idx + 1,
@@ -195,6 +196,8 @@ def run_forecast(df, salesperson, forecast_months=None):
             '本季合计': int(q_this),
             '去年同季': int(q_last),
             '同比%': q_pct if q_pct is not None else '',
+            '有效对比月': q_valid,
+            '季度月数': q_total,
         }
         for i, m in enumerate(forecast_months):
             result_row[f'推荐_{m}'] = forecasts[i]
