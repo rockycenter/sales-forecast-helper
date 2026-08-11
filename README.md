@@ -131,3 +131,16 @@ sales-forecast-helper/
 ## 📜 License
 
 [MIT License](LICENSE)
+
+---
+
+## 🪟 Windows EXE 下载
+
+每次推送代码，GitHub Actions 会自动打包生成 `.exe` 文件：
+
+1. 打开 [Actions](https://github.com/rockycenter/sales-forecast-helper/actions) 页面
+2. 点击最新的 workflow run
+3. 在 **Artifacts** 区域下载 `销售预测助手`
+4. 解压后双击 `销售预测助手.exe` 即可运行（无需安装 Python）
+
+> 发布正式版本时，打一个 `v` 开头的 tag（如 `v2.0`），GitHub 会自动创建 Release 并附带 exe。
