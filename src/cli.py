@@ -3,7 +3,7 @@
 import os
 import numpy as np
 from . import __version__
-from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months
+from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, parse_forecast_year
 
 
 def print_banner():
@@ -120,8 +120,9 @@ def run_interactive(file_path):
     # 1. 加载文件
     print(f"📂 读取文件: {os.path.basename(file_path)}")
     try:
-        df, sheet_name, _, history_count = load_workbook(file_path)
+        df, sheet_name, _, history_count, open_so_col = load_workbook(file_path)
         forecast_months = parse_forecast_months(sheet_name)
+        forecast_year = parse_forecast_year(sheet_name)
     except (FileNotFoundError, ValueError) as e:
         print(f"\n❌ {e}")
         return 1
@@ -158,7 +159,10 @@ def run_interactive(file_path):
     # 3. 运行预测
     print(f"\n⏳ 正在为 {salesperson} 生成预测...")
     try:
-        result_df, warnings = run_forecast(df, salesperson, forecast_months, history_count)
+        result_df, warnings = run_forecast(
+            df, salesperson, forecast_months, history_count,
+            forecast_year, open_so_col
+        )
     except ValueError as e:
         print(f"\n❌ {e}")
         return 1

@@ -100,24 +100,19 @@ def compute_all_quarters(history, forecasts, first_month, forecast_year):
         q_months = [3 * q - 2, 3 * q - 1, 3 * q]
         this_q = 0
         last_q = 0
-        compare_this = 0
         valid = 0
         for m in q_months:
             this_val = forecast_map.get((y, m), actual.get((y, m)))
-            if this_val is None:
-                continue
-            this_q += this_val
-
+            if this_val is not None:
+                this_q += this_val
             last_val = actual.get((y - 1, m))
-            if last_val is None:
-                continue
-            compare_this += this_val
-            last_q += last_val
-            valid += 1
-        pct = round((compare_this - last_q) / last_q * 100, 1) if last_q > 0 else None
+            if last_val is not None:
+                last_q += last_val
+                valid += 1
+        pct = round((this_q - last_q) / last_q * 100, 1) if last_q > 0 else None
         label = f"{y}Q{q}"
         results.append({'label': label, 'year': y, 'this': int(this_q),
-                        'compare': int(compare_this), 'last': int(last_q),
+                        'last': int(last_q),
                         'pct': pct, 'valid': valid})
         labels.append(label)
     return results, labels
@@ -165,7 +160,7 @@ def _detect_history_count(df, target_sheet=None):
         except Exception:
             pass
 
-    # 兜底：扫描数据行，最多识别 12 个月，防止把预测列计入历史
+    # 兜底：扫描数据行，最多识别 24 个月，避免把预测列计入历史
     for row_idx in range(3, min(len(df), 20)):
         row = df.iloc[row_idx]
         count = 0
@@ -173,13 +168,23 @@ def _detect_history_count(df, target_sheet=None):
             val = row[c]
             if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)) and val >= 0:
                 count += 1
-                if count >= 12:
+                if count >= 24:
                     return count
             else:
                 break
         if count >= 6:
             return count
     return 12
+
+
+def _detect_open_so_col(df):
+    """自动识别 Open SO 所在列，兼容不同历史月数导致的列偏移。"""
+    for r in range(min(4, len(df))):
+        for c in range(len(df.columns)):
+            val = df.iat[r, c]
+            if isinstance(val, str) and 'openso' in val.lower().replace(' ', ''):
+                return c
+    return COL_OPEN_SO
 
 
 
@@ -207,8 +212,9 @@ def load_workbook(file_path):
 
     # 自动检测历史数据列数（只取首个预测月之前的实际月份列）
     history_count = _detect_history_count(df, target_sheet)
+    open_so_col = _detect_open_so_col(df)
     
-    return df, target_sheet, sheet_names, history_count
+    return df, target_sheet, sheet_names, history_count, open_so_col
 
 
 def get_salespeople(df):
@@ -217,12 +223,15 @@ def get_salespeople(df):
     return sorted(names)
 
 
-def run_forecast(df, salesperson, forecast_months=None, history_count=12, forecast_year=None):
+def run_forecast(df, salesperson, forecast_months=None, history_count=12,
+                 forecast_year=None, open_so_col=None):
     """对指定销售员运行完整预测"""
     if forecast_months is None:
         forecast_months = ["8月", "9月", "10月", "11月"]
     if forecast_year is None:
         forecast_year = datetime.now().year
+    if open_so_col is None:
+        open_so_col = COL_OPEN_SO
     user_data = df[df[COL_SALESPERSON] == salesperson].copy()
 
     if len(user_data) == 0:
@@ -239,13 +248,16 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, foreca
         spec = row[COL_SPEC]
         legacy = row[COL_LEGACY]
         history = [row[c] for c in range(COL_HISTORY_START, COL_HISTORY_START + history_count)]
-        open_so = row[COL_OPEN_SO] if pd.notna(row[COL_OPEN_SO]) else 0
+        open_so = row[open_so_col] if pd.notna(row[open_so_col]) else 0
 
         ptype, reason = classify_product(history)
 
         forecasts = []
         for month_idx in range(4):
-            same_month_ly = history[month_idx] if month_idx < len(history) else None
+            # 历史可能为 12 个月，也可能为 14 个月（含去年 7/8 月）。
+            # 去年同期月份在 history 中的位置 = history_count - 12 + month_idx
+            same_idx = history_count - 12 + month_idx
+            same_month_ly = history[same_idx] if 0 <= same_idx < len(history) else None
 
             if ptype == 'A':
                 f = forecast_A_stable(history, same_month_ly, month_idx,
@@ -295,7 +307,6 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, foreca
         for qr in quarter_results:
             q = qr['label']
             result_row[f'{q}_今年'] = qr['this']
-            result_row[f'_{q}_今年可比'] = qr['compare']
             result_row[f'{q}_去年'] = qr['last']
             result_row[f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
             result_row[f'{q}_有效月'] = qr['valid']
