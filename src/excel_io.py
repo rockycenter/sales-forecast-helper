@@ -120,9 +120,48 @@ def compute_all_quarters(history, forecasts, first_month, forecast_year):
 
 
 
-def _detect_history_count(df):
-    """扫描数据行，从 COL_HISTORY_START 开始数连续数值列"""
+def _detect_history_count(df, target_sheet=None):
+    """从表头识别真正的历史月数，只统计首个预测月之前的月份列。
+
+    优先使用表头日期列；如果表头是文本或无法识别，则退回数据行扫描，
+    并限制在 12 个月以内，避免把预测建议/Open SO 当成历史。
+    """
     from .config import COL_HISTORY_START
+
+    # 表头日期识别：优先处理当前 Excel 的 datetime 表头
+    if target_sheet and len(df) > 2:
+        try:
+            first_months = parse_forecast_months(target_sheet)
+            first_year = parse_forecast_year(target_sheet)
+            first_month = int(first_months[0].replace('月', ''))
+            first_date = (first_year, first_month)
+
+            header = df.iloc[2]
+            count = 0
+            for c in range(COL_HISTORY_START, len(df.columns)):
+                val = header[c]
+                if pd.isna(val):
+                    break
+                dt = None
+                if isinstance(val, (pd.Timestamp, datetime)):
+                    dt = pd.Timestamp(val).to_pydatetime()
+                elif isinstance(val, str):
+                    try:
+                        dt = pd.to_datetime(val, errors='raise').to_pydatetime()
+                    except Exception:
+                        dt = None
+                if dt is None:
+                    break
+                if (dt.year, dt.month) < first_date:
+                    count += 1
+                    continue
+                break
+            if count >= 6:
+                return count
+        except Exception:
+            pass
+
+    # 兜底：扫描数据行，最多识别 12 个月，防止把预测列计入历史
     for row_idx in range(3, min(len(df), 20)):
         row = df.iloc[row_idx]
         count = 0
@@ -130,6 +169,8 @@ def _detect_history_count(df):
             val = row[c]
             if pd.notna(val) and isinstance(val, (int, float, np.integer, np.floating)) and val >= 0:
                 count += 1
+                if count >= 12:
+                    return count
             else:
                 break
         if count >= 6:
@@ -160,8 +201,8 @@ def load_workbook(file_path):
 
     df = pd.read_excel(file_path, sheet_name=target_sheet, header=None)
 
-    # 自动检测历史数据列数及月份映射
-    history_count = _detect_history_count(df)
+    # 自动检测历史数据列数（只取首个预测月之前的实际月份列）
+    history_count = _detect_history_count(df, target_sheet)
     
     return df, target_sheet, sheet_names, history_count
 
