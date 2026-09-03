@@ -6,7 +6,7 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
 
-from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, get_quarter_months, compute_quarter_comparison
+from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, parse_forecast_year, compute_all_quarters
 from .predictors import smart_round
 from .config import OUTPUT_COLUMNS
 from . import __version__
@@ -26,6 +26,7 @@ class ForecastApp:
         self.sheet_name = None
         self.forecast_months = None
         self.history_count = 12
+        self.forecast_year = None
         self.manual_overrides = {}
 
         self._build_ui()
@@ -151,6 +152,7 @@ class ForecastApp:
         try:
             self.df, self.sheet_name, _, self.history_count = load_workbook(path)
             self.forecast_months = parse_forecast_months(self.sheet_name)
+            self.forecast_year = parse_forecast_year(self.sheet_name)
             self.file_path = path
             self.file_var.set(path)
 
@@ -177,7 +179,7 @@ class ForecastApp:
         self.root.update()
 
         try:
-            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count)
+            self.result_df, warnings = run_forecast(self.df, person, self.forecast_months, self.history_count, self.forecast_year)
             self.salesperson = person
         except Exception as e:
             messagebox.showerror("预测失败", str(e))
@@ -190,21 +192,30 @@ class ForecastApp:
         self.export_btn['state'] = 'normal'
         self.status_var.set(f"预测完成 — {person} — {len(self.result_df)} 条记录")
 
+    def _get_quarter_labels(self):
+        """从 result_df 列名提取季度标签，如 ['2026Q3','2026Q4']"""
+        if self.result_df is None:
+            return []
+        labels = []
+        for col in self.result_df.columns:
+            if col.endswith('_今年'):
+                labels.append(col[:-3])
+        return labels
+
     def _populate_table(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         # 动态重建列
         months = self.forecast_months or ["8月", "9月", "10月", "11月"]
-        q_months = get_quarter_months(int(months[0].replace('月', '')))
-        # 检测有效对比月数
-        sample_q_valid = self.result_df.iloc[0].get('有效对比月', 3) if len(self.result_df) > 0 else 3
-        sample_q_total = self.result_df.iloc[0].get('季度月数', 3) if len(self.result_df) > 0 else 3
+        q_labels = self._get_quarter_labels()
         
-        columns = ("#", "SPEC料号", "Legacy Item", "类型", "Open SO") + tuple(months) + ("本季合计", "去年同季", "同比%")
-        col_widths = [40, 100, 100, 50, 80] + [80] * len(months) + [90, 90, 70]
+        columns = ["#", "SPEC料号", "Legacy Item", "类型", "Open SO"] + list(months)
+        for q in q_labels:
+            columns += [f"{q}_今年", f"{q}_去年", f"{q}_同比"]
+        col_widths = [40, 100, 100, 50, 80] + [80] * len(months) + [90, 90, 70] * len(q_labels)
 
-        self.tree['columns'] = columns
+        self.tree['columns'] = tuple(columns)
         for col, w in zip(columns, col_widths):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=w, anchor="center")
@@ -219,11 +230,11 @@ class ForecastApp:
             ]
             for m in months:
                 vals.append(f"{row[f'推荐_{m}']:,}")
-            # 季度列
-            vals.append(f"{int(row['本季合计']):,}")
-            vals.append(f"{int(row['去年同季']):,}")
-            pct = row['同比%']
-            vals.append(f"{pct}%" if pct != '' else 'N/A')
+            for q in q_labels:
+                vals.append(f"{int(row[f'{q}_今年']):,}")
+                vals.append(f"{int(row[f'{q}_去年']):,}")
+                pct = row.get(f'{q}_同比', '')
+                vals.append(f"{pct}%" if pct != '' else 'N/A')
             tag = row['产品类型']
             self.tree.insert("", "end", values=vals, tags=(tag,))
 
@@ -233,18 +244,20 @@ class ForecastApp:
 
     def _update_summary(self, warnings):
         counts = self.result_df['产品类型'].value_counts()
-        q_total = int(self.result_df['本季合计'].sum())
-        q_last = int(self.result_df['去年同季'].sum())
-        if q_last > 0:
-            q_pct = round((q_total - q_last) / q_last * 100, 1)
-            q_str = f"季度同比: {'↑' if q_pct >= 0 else '↓'}{abs(q_pct)}%"
-        else:
-            q_str = "季度同比: N/A"
-        summary = (f"A类: {counts.get('A', 0)}  |  "
-                   f"B类: {counts.get('B', 0)}  |  "
-                   f"C类: {counts.get('C', 0)}  |  "
-                   f"{q_str}")
-        self.summary_var.set(summary)
+        parts = [f"A类: {counts.get('A', 0)}", f"B类: {counts.get('B', 0)}", f"C类: {counts.get('C', 0)}"]
+        for q in self._get_quarter_labels():
+            this_col = f"{q}_今年"
+            last_col = f"{q}_去年"
+            if this_col in self.result_df.columns and last_col in self.result_df.columns:
+                q_total = int(self.result_df[this_col].sum())
+                q_last = int(self.result_df[last_col].sum())
+                if q_last > 0:
+                    q_pct = round((q_total - q_last) / q_last * 100, 1)
+                    arrow = '↑' if q_pct >= 0 else '↓'
+                    parts.append(f"{q}: {arrow}{abs(q_pct)}%")
+                else:
+                    parts.append(f"{q}: N/A")
+        self.summary_var.set("  |  ".join(parts))
 
         if warnings:
             self.status_var.set(f"⚠️ 有 {len(warnings)} 条 Open SO 警告")
@@ -257,13 +270,15 @@ class ForecastApp:
             row = self.result_df.iloc[row_idx]
             history = row['_历史']
             forecasts = [row[f'推荐_{m}'] for m in months]
-            q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
-                history, forecasts, first_month_num
+            quarter_results, _ = compute_all_quarters(
+                history, forecasts, first_month_num, self.forecast_year
             )
-            self.result_df.at[row_idx, '本季合计'] = int(q_this)
-            self.result_df.at[row_idx, '去年同季'] = int(q_last)
-            self.result_df.at[row_idx, '同比%'] = q_pct if q_pct is not None else ''
-            self.result_df.at[row_idx, '有效对比月'] = valid
+            for qr in quarter_results:
+                q = qr['label']
+                self.result_df.at[row_idx, f'{q}_今年'] = qr['this']
+                self.result_df.at[row_idx, f'{q}_去年'] = qr['last']
+                self.result_df.at[row_idx, f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
+                self.result_df.at[row_idx, f'{q}_有效月'] = qr['valid']
 
     def _apply_tier_adjust(self):
         """按 A/B/C 档位百分比增量，从原始预测重算所有月份值"""
@@ -358,26 +373,29 @@ class ForecastApp:
         """编辑某个预测值后，重算该行的季度同比并刷新显示"""
         row = self.result_df.iloc[row_idx]
         history = row['_历史']
-        # 从 result_df 重建当前预测值（已包含刚才的修改）
         months = self.forecast_months or ["8月", "9月", "10月", "11月"]
         forecasts = [row[f'推荐_{m}'] for m in months]
         first_month_num = int(months[0].replace('月', ''))
 
-        q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
-            history, forecasts, first_month_num
+        quarter_results, _ = compute_all_quarters(
+            history, forecasts, first_month_num, self.forecast_year
         )
-
-        # 更新 DataFrame
-        self.result_df.at[row_idx, '本季合计'] = int(q_this)
-        self.result_df.at[row_idx, '去年同季'] = int(q_last)
-        self.result_df.at[row_idx, '同比%'] = q_pct if q_pct is not None else ''
-        self.result_df.at[row_idx, '有效对比月'] = valid
+        for qr in quarter_results:
+            q = qr['label']
+            self.result_df.at[row_idx, f'{q}_今年'] = qr['this']
+            self.result_df.at[row_idx, f'{q}_去年'] = qr['last']
+            self.result_df.at[row_idx, f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
+            self.result_df.at[row_idx, f'{q}_有效月'] = qr['valid']
 
         # 更新表格显示（季度列在月份列之后）
+        q_labels = self._get_quarter_labels()
         base = 5 + len(months)
-        self.tree.set(item, columns[base], f"{int(q_this):,}")
-        self.tree.set(item, columns[base + 1], f"{int(q_last):,}")
-        self.tree.set(item, columns[base + 2], f"{q_pct}%" if q_pct is not None else 'N/A')
+        for j, q in enumerate(q_labels):
+            row2 = self.result_df.iloc[row_idx]
+            self.tree.set(item, columns[base + j*3], f"{int(row2[f'{q}_今年']):,}")
+            self.tree.set(item, columns[base + j*3 + 1], f"{int(row2[f'{q}_去年']):,}")
+            pct = row2.get(f'{q}_同比', '')
+            self.tree.set(item, columns[base + j*3 + 2], f"{pct}%" if pct != '' else 'N/A')
 
         # 刷新汇总
         self._update_summary([])

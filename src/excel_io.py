@@ -40,60 +40,83 @@ def parse_forecast_months(sheet_name):
     return [f"{(current + i - 1) % 12 + 1}月" for i in range(4)]
 
 
+def parse_forecast_year(sheet_name):
+    """从Sheet名解析预测年份，如 '26年9-12月' → 2026"""
+    import re
+    m = re.search(r'(\d{4})\s*年', sheet_name)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'(\d{2})\s*年', sheet_name)
+    if m:
+        y = int(m.group(1))
+        return 2000 + y if y < 100 else y
+    from datetime import datetime
+    return datetime.now().year
+
+
 def get_quarter_months(month):
     """返回指定月份所在季度的三个月，如 8 → [7,8,9]"""
     q_start = ((month - 1) // 3) * 3 + 1
     return [q_start, q_start + 1, q_start + 2]
 
 
-def compute_quarter_comparison(history, forecasts, first_month):
+def compute_all_quarters(history, forecasts, first_month, forecast_year):
     """
-    计算季度同比（位置推算）
-    history: N个月实际数据，覆盖 [first_month-N, first_month-1] 月
-    forecasts: 4个月预测值 [f1, f2, f3, f4]
-    first_month: 第一个预测月的月份 (1-12)
-    返回: (本季合计, 去年同季合计, 同比%, 有效月数, 季度总月数)
+    计算预测月覆盖的所有季度对比（每次4个月必跨2个季度）
+    history: 历史实际数据列表，[first_month-N, first_month-1] 月
+    forecasts: 预测值列表（与 forecast_months 对应）
+    first_month: 第一个预测月 (1-12)
+    forecast_year: 第一个预测月所在年份
+    返回: (quarter_results, quarter_labels)
+        quarter_results: [{'label':'Q3','this':..,'last':..,'pct':..,'valid':..}, ...]
+        quarter_labels: ['Q3','Q4'] 等按时间顺序
     """
     import pandas as pd
-    q_months = get_quarter_months(first_month)
     N = len(history)
 
-    this_q = 0
-    last_q = 0
-    valid_months = 0
+    # 实际数据映射 {(年, 月): 值}
+    actual = {}
+    for i in range(N):
+        cum = first_month - N + i  # 相对 forecast_year 的累计月（1月起算）
+        y = forecast_year + (cum - 1) // 12
+        m = ((cum - 1) % 12) + 1
+        val = history[i]
+        if pd.notna(val) and val > 0:
+            actual[(y, m)] = val
 
-    for qm in q_months:
-        # 去年同月在 history 中的索引
-        # history[0] = first_month - N 月
-        # qm 的去年 = qm - 12
-        last_idx = (qm - 12) - (first_month - N)
+    # 预测映射
+    forecast_map = {}
+    for i, f in enumerate(forecasts):
+        cum = first_month + i
+        y = forecast_year + (cum - 1) // 12
+        m = ((cum - 1) % 12) + 1
+        forecast_map[(y, m)] = f
 
-        if last_idx < 0 or last_idx >= N:
-            continue
-        if not (pd.notna(history[last_idx]) and history[last_idx] > 0):
-            continue
-
-        valid_months += 1
-
-        # 今年该月
-        if qm >= first_month:
-            this_val = forecasts[qm - first_month]
-        else:
-            this_idx = qm - (first_month - N)
-            raw = history[this_idx] if 0 <= this_idx < N else 0
-            this_val = raw if pd.notna(raw) and raw > 0 else 0
-
-        last_val = history[last_idx]
-
-        this_q += this_val
-        last_q += last_val
-
-    if last_q > 0:
-        pct = round((this_q - last_q) / last_q * 100, 1)
-    else:
-        pct = None
-
-    return this_q, last_q, pct, valid_months, len(q_months)
+    # 覆盖的季度（预测月涉及的所有 (年, 季度)）
+    quarters = sorted(set((y, (m - 1) // 3 + 1) for (y, m) in forecast_map.keys()))
+    results = []
+    labels = []
+    for (y, q) in quarters:
+        q_months = [3 * q - 2, 3 * q - 1, 3 * q]
+        this_q = 0
+        last_q = 0
+        valid = 0
+        for m in q_months:
+            last_val = actual.get((y - 1, m))
+            if last_val is None:
+                continue
+            this_val = forecast_map.get((y, m), actual.get((y, m)))
+            if this_val is None:
+                continue
+            this_q += this_val
+            last_q += last_val
+            valid += 1
+        pct = round((this_q - last_q) / last_q * 100, 1) if last_q > 0 else None
+        label = f"{y}Q{q}"
+        results.append({'label': label, 'year': y, 'this': int(this_q),
+                        'last': int(last_q), 'pct': pct, 'valid': valid})
+        labels.append(label)
+    return results, labels
 
 
 
@@ -149,10 +172,12 @@ def get_salespeople(df):
     return sorted(names)
 
 
-def run_forecast(df, salesperson, forecast_months=None, history_count=12):
+def run_forecast(df, salesperson, forecast_months=None, history_count=12, forecast_year=None):
     """对指定销售员运行完整预测"""
     if forecast_months is None:
         forecast_months = ["8月", "9月", "10月", "11月"]
+    if forecast_year is None:
+        forecast_year = datetime.now().year
     user_data = df[df[COL_SALESPERSON] == salesperson].copy()
 
     if len(user_data) == 0:
@@ -199,11 +224,12 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12):
             )
             forecasts[0] = smart_round(open_so)
 
-        # 季度同比计算
+        # 季度同比计算（覆盖所有预测季度）
         first_month_num = int(forecast_months[0].replace('月', ''))
-        q_this, q_last, q_pct, q_valid, q_total = compute_quarter_comparison(history, forecasts, first_month_num)
+        quarter_results, _ = compute_all_quarters(
+            history, forecasts, first_month_num, forecast_year
+        )
 
-        
         result_row = {
             '行号': idx + 1,
             '区域': row[COL_REGION],
@@ -216,16 +242,17 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12):
             'Open_SO': int(open_so) if pd.notna(open_so) else 0,
             '历史平均': round(np.mean([x for x in history if pd.notna(x) and x > 0]))
             if [x for x in history if pd.notna(x) and x > 0] else 0,
-            '本季合计': int(q_this),
-            '去年同季': int(q_last),
-            '同比%': q_pct if q_pct is not None else '',
-            '有效对比月': q_valid,
-            '季度月数': q_total,
-            '_历史': history,       # 原始12月数据，供GUI实时重算同比
-            '_预测': forecasts,     # 原始4月预测，供GUI实时重算同比
+            '_历史': history,       # 原始历史数据，供GUI实时重算
+            '_预测': forecasts,     # 原始预测值，供GUI实时重算
         }
         for i, m in enumerate(forecast_months):
             result_row[f'推荐_{m}'] = forecasts[i]
+        for qr in quarter_results:
+            q = qr['label']
+            result_row[f'{q}_今年'] = qr['this']
+            result_row[f'{q}_去年'] = qr['last']
+            result_row[f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
+            result_row[f'{q}_有效月'] = qr['valid']
         results.append(result_row)
 
     result_df = pd.DataFrame(results)
@@ -240,5 +267,6 @@ def save_result(result_df, salesperson, output_path=None):
         timestamp = datetime.now().strftime("%m%d_%H%M")
         path = f"预测结果_{salesperson.replace(' ', '_')}_{timestamp}.xlsx"
 
-    result_df.to_excel(path, index=False)
+    export_df = result_df[[c for c in result_df.columns if not c.startswith('_')]]
+    export_df.to_excel(path, index=False)
     return os.path.abspath(path)
