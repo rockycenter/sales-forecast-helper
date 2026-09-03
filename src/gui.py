@@ -247,9 +247,13 @@ class ForecastApp:
         parts = [f"A类: {counts.get('A', 0)}", f"B类: {counts.get('B', 0)}", f"C类: {counts.get('C', 0)}"]
         for q in self._get_quarter_labels():
             this_col = f"{q}_今年"
+            compare_col = f"_{q}_今年可比"
             last_col = f"{q}_去年"
             if this_col in self.result_df.columns and last_col in self.result_df.columns:
-                q_total = int(self.result_df[this_col].sum())
+                if compare_col in self.result_df.columns:
+                    q_total = int(self.result_df[compare_col].sum())
+                else:
+                    q_total = int(self.result_df[this_col].sum())
                 q_last = int(self.result_df[last_col].sum())
                 if q_last > 0:
                     q_pct = round((q_total - q_last) / q_last * 100, 1)
@@ -276,6 +280,7 @@ class ForecastApp:
             for qr in quarter_results:
                 q = qr['label']
                 self.result_df.at[row_idx, f'{q}_今年'] = qr['this']
+                self.result_df.at[row_idx, f'_{q}_今年可比'] = qr['compare']
                 self.result_df.at[row_idx, f'{q}_去年'] = qr['last']
                 self.result_df.at[row_idx, f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
                 self.result_df.at[row_idx, f'{q}_有效月'] = qr['valid']
@@ -383,6 +388,7 @@ class ForecastApp:
         for qr in quarter_results:
             q = qr['label']
             self.result_df.at[row_idx, f'{q}_今年'] = qr['this']
+            self.result_df.at[row_idx, f'_{q}_今年可比'] = qr['compare']
             self.result_df.at[row_idx, f'{q}_去年'] = qr['last']
             self.result_df.at[row_idx, f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
             self.result_df.at[row_idx, f'{q}_有效月'] = qr['valid']

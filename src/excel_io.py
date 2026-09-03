@@ -100,21 +100,25 @@ def compute_all_quarters(history, forecasts, first_month, forecast_year):
         q_months = [3 * q - 2, 3 * q - 1, 3 * q]
         this_q = 0
         last_q = 0
+        compare_this = 0
         valid = 0
         for m in q_months:
-            last_val = actual.get((y - 1, m))
-            if last_val is None:
-                continue
             this_val = forecast_map.get((y, m), actual.get((y, m)))
             if this_val is None:
                 continue
             this_q += this_val
+
+            last_val = actual.get((y - 1, m))
+            if last_val is None:
+                continue
+            compare_this += this_val
             last_q += last_val
             valid += 1
-        pct = round((this_q - last_q) / last_q * 100, 1) if last_q > 0 else None
+        pct = round((compare_this - last_q) / last_q * 100, 1) if last_q > 0 else None
         label = f"{y}Q{q}"
         results.append({'label': label, 'year': y, 'this': int(this_q),
-                        'last': int(last_q), 'pct': pct, 'valid': valid})
+                        'compare': int(compare_this), 'last': int(last_q),
+                        'pct': pct, 'valid': valid})
         labels.append(label)
     return results, labels
 
@@ -291,6 +295,7 @@ def run_forecast(df, salesperson, forecast_months=None, history_count=12, foreca
         for qr in quarter_results:
             q = qr['label']
             result_row[f'{q}_今年'] = qr['this']
+            result_row[f'_{q}_今年可比'] = qr['compare']
             result_row[f'{q}_去年'] = qr['last']
             result_row[f'{q}_同比'] = qr['pct'] if qr['pct'] is not None else ''
             result_row[f'{q}_有效月'] = qr['valid']
