@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 
 from .excel_io import load_workbook, get_salespeople, run_forecast, save_result, parse_forecast_months, get_quarter_months, compute_quarter_comparison
+from .predictors import smart_round
 from .config import OUTPUT_COLUMNS
 from . import __version__
 
@@ -25,6 +26,7 @@ class ForecastApp:
         self.sheet_name = None
         self.forecast_months = None
         self.history_count = 12
+        self.manual_overrides = {}
 
         self._build_ui()
 
@@ -73,6 +75,25 @@ class ForecastApp:
                                   state="disabled", bg="#4CAF50", fg="white",
                                   font=("Microsoft YaHei", 10, "bold"), padx=15)
         self.run_btn.pack(side=tk.LEFT, padx=10)
+
+        # 档位增量调控行
+        f2b = tk.Frame(self.root)
+        f2b.pack(fill=tk.X, padx=20, pady=5)
+        tk.Label(f2b, text="🔧 档位增量：", font=("Microsoft YaHei", 10)).pack(side=tk.LEFT)
+        self.tier_adjust_vars = {}
+        for ptype, bgc in [('A', '#FFEBEE'), ('B', '#FFF8E1'), ('C', '#FFFFFF')]:
+            tk.Label(f2b, text=f"{ptype}类", font=("Microsoft YaHei", 10), bg=bgc,
+                     relief=tk.GROOVE, padx=5).pack(side=tk.LEFT, padx=(8, 3))
+            var = tk.DoubleVar(value=0)
+            sp = tk.Spinbox(f2b, from_=-100, to=100, increment=5, textvariable=var,
+                            width=6, font=("Microsoft YaHei", 10), justify="center")
+            sp.pack(side=tk.LEFT, padx=2)
+            tk.Label(f2b, text="%", font=("Microsoft YaHei", 10)).pack(side=tk.LEFT)
+            self.tier_adjust_vars[ptype] = var
+        tk.Button(f2b, text="应用增量", command=self._apply_tier_adjust,
+                  bg="#FF5722", fg="white",
+                  font=("Microsoft YaHei", 9, "bold"), padx=10).pack(side=tk.LEFT, padx=12)
+        tk.Label(f2b, text="（负数=下调，正数=上调）", font=("Microsoft YaHei", 9), fg="#777").pack(side=tk.LEFT)
 
         # 表格区域
         table_frame = tk.Frame(self.root)
@@ -228,6 +249,48 @@ class ForecastApp:
         if warnings:
             self.status_var.set(f"⚠️ 有 {len(warnings)} 条 Open SO 警告")
 
+    def _recompute_all_quarters(self):
+        """根据当前 推荐_X月 值，重算所有行的季度同比"""
+        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
+        first_month_num = int(months[0].replace('月', ''))
+        for row_idx in range(len(self.result_df)):
+            row = self.result_df.iloc[row_idx]
+            history = row['_历史']
+            forecasts = [row[f'推荐_{m}'] for m in months]
+            q_this, q_last, q_pct, valid, total = compute_quarter_comparison(
+                history, forecasts, first_month_num
+            )
+            self.result_df.at[row_idx, '本季合计'] = int(q_this)
+            self.result_df.at[row_idx, '去年同季'] = int(q_last)
+            self.result_df.at[row_idx, '同比%'] = q_pct if q_pct is not None else ''
+            self.result_df.at[row_idx, '有效对比月'] = valid
+
+    def _apply_tier_adjust(self):
+        """按 A/B/C 档位百分比增量，从原始预测重算所有月份值"""
+        if self.result_df is None:
+            messagebox.showwarning("提示", "请先生成预测")
+            return
+
+        months = self.forecast_months or ["8月", "9月", "10月", "11月"]
+        for row_idx in range(len(self.result_df)):
+            ptype = self.result_df.at[row_idx, '产品类型']
+            factor = 1 + self.tier_adjust_vars[ptype].get() / 100
+            base_forecasts = self.result_df.at[row_idx, '_预测']
+            for i, m in enumerate(months):
+                col = f'推荐_{m}'
+                if (row_idx, col) in self.manual_overrides:
+                    new_val = self.manual_overrides[(row_idx, col)]
+                else:
+                    new_val = smart_round(base_forecasts[i] * factor)
+                self.result_df.at[row_idx, col] = new_val
+
+        self._recompute_all_quarters()
+        self._populate_table()
+        self._update_summary([])
+        self.status_var.set(f"已应用档位增量：A={self.tier_adjust_vars['A'].get():.0f}%  "
+                            f"B={self.tier_adjust_vars['B'].get():.0f}%  "
+                            f"C={self.tier_adjust_vars['C'].get():.0f}%")
+
     # ── 编辑 ──
 
     def _on_cell_edit(self, event):
@@ -275,6 +338,7 @@ class ForecastApp:
                 new_val = int(float(entry_var.get()))
                 col_name = f"推荐_{month}"
                 self.result_df.at[row_idx, col_name] = new_val
+                self.manual_overrides[(row_idx, col_name)] = new_val
                 self.tree.set(item, columns[col_idx], f"{new_val:,}")
                 # 实时重算该行季度同比
                 self._refresh_quarter_row(row_idx, item, columns)
